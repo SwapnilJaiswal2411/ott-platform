@@ -1,9 +1,9 @@
 # Product Requirements Document (PRD)
-# OTT Streaming Platform - "StreamVerse"
+# OTT Streaming Platform - "MahuaPlay"
 
 **Document Version**: 2.0
 **Last Updated**: 17 February 2026
-**Author**: StreamVerse Product Team
+**Author**: MahuaPlay Product Team
 **Status**: Ready for Development
 
 ---
@@ -61,7 +61,7 @@
 ## 1. Executive Summary
 
 ### 1.1 Product Vision
-StreamVerse is a next-generation Over-The-Top (OTT) streaming platform that delivers high-quality video content to users across multiple devices. Similar to Netflix, it provides on-demand movies, TV shows, documentaries, and original content with a personalized viewing experience.
+MahuaPlay is a next-generation Over-The-Top (OTT) streaming platform that delivers high-quality video content to users across multiple devices. Similar to Netflix, it provides on-demand movies, TV shows, documentaries, and original content with a personalized viewing experience.
 
 ### 1.2 Objectives
 - Deliver seamless streaming experience across devices
@@ -1359,7 +1359,7 @@ WITH CACHING:
 
 **Real Example - User Opens App:**
 ```
-User in Patna opens StreamVerse app:
+User in Patna opens MahuaPlay app:
 
 STEP 1: App loads instantly
         → App assets cached on DEVICE (Layer 4)
@@ -2705,7 +2705,7 @@ Auto-Actions:
 │   │                                                                      │  │
 │   │   Content Type         │ Boost                                      │  │
 │   │   ──────────────────────────────────────────────────────────────────│  │
-│   │   StreamVerse Originals│ 1.3x (promote own content)                │  │
+│   │   MahuaPlay Originals│ 1.3x (promote own content)                │  │
 │   │   Premium Content      │ 1.1x (for premium users)                  │  │
 │   │   New Releases         │ 1.2x (first 2 weeks)                      │  │
 │   │   Exclusive Content    │ 1.25x                                     │  │
@@ -2907,7 +2907,7 @@ Auto-Actions:
 │   │  │Jawan│ │War  │ │Tiger│ │Race │ │Dhoom│                          │  │
 │   │  └─────┘ └─────┘ └─────┘ └─────┘ └─────┘                          │  │
 │   │                                                                      │  │
-│   │  ROW 4: New on StreamVerse                                          │  │
+│   │  ROW 4: New on MahuaPlay                                          │  │
 │   │  ROW 5: Trending Now                                                │  │
 │   │  ROW 6: Action Movies For You                                       │  │
 │   │  ROW 7: Bhojpuri Hits (Regional)                                   │  │
@@ -2925,7 +2925,7 @@ Auto-Actions:
 │   │   Continue Watching     │ Unfinished content, sorted by last watch │  │
 │   │   Top 10 in [State]     │ Most watched in user's geo, last 7 days  │  │
 │   │   Because You Watched   │ Content-based similarity to recent views │  │
-│   │   New on StreamVerse    │ Added in last 14 days, ranked by quality │  │
+│   │   New on MahuaPlay    │ Added in last 14 days, ranked by quality │  │
 │   │   Trending Now          │ Viral content, social mentions, views    │  │
 │   │   [Genre] For You       │ Top genre × user affinity score          │  │
 │   │   Regional Content      │ Based on language preference / location  │  │
