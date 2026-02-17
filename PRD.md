@@ -43,7 +43,7 @@
 |-----------|---------|
 | **Primary Regions** | Bihar, Odisha, Gujarat, Maharashtra (India) |
 | **Languages** | Hindi, Marathi, Gujarati, Odia, Bhojpuri, English |
-| **Expected Scale** | 10,000 - 100,000 concurrent users |
+| **Expected Scale** | 1 - 10 Million concurrent users |
 | **Primary Device** | Mobile (Android 80%, iOS 15%, Web 5%) |
 | **Network** | 4G LTE dominant, some 5G in urban, 3G in rural |
 
@@ -3653,10 +3653,224 @@ CREATE TABLE ad_frequency_caps (
 | **Recommendation Service** | ML-based suggestions | Python/TensorFlow | Redis + S3 |
 | **Payment Service** | Billing, Subscriptions | Node.js | PostgreSQL |
 | **Notification Service** | Push, Email, SMS | Node.js | Redis + SQS |
-| **Analytics Service** | Tracking, Reporting | Python/Spark | ClickHouse |
+| **Analytics Service** | Tracking, Reporting | Python/Spark | ClickHouse + Kafka |
 | **Admin Service** | CMS, Content Management | Node.js/React | PostgreSQL |
+| **Event Service** | Real-time event streaming | Kafka | Kafka + S3 |
 
-### 3.3 Video Delivery Pipeline
+### 3.3 Apache Kafka Event Streaming Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    KAFKA EVENT STREAMING ARCHITECTURE                        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│   WHY KAFKA FOR MILLION-SCALE:                                             │
+│   • Handle 1M+ events per second                                           │
+│   • Real-time analytics and recommendations                                │
+│   • Replay events for debugging/recovery                                   │
+│   • Decouple services (async communication)                                │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Kafka Cluster Configuration:**
+
+| Parameter | Value | Notes |
+|-----------|-------|-------|
+| Brokers | 6 nodes | 3 AZs, 2 per AZ |
+| Partitions per topic | 12-24 | Based on throughput |
+| Replication factor | 3 | High availability |
+| Retention | 7 days | Replay capability |
+| Instance type | r6g.xlarge | 32GB RAM each |
+
+**Kafka Topics & Event Flow:**
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         KAFKA TOPICS                                         │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│   PRODUCERS (Services that send events)                                    │
+│   ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐             │
+│   │ Mobile  │ │   Web   │ │   TV    │ │ Payment │ │   CMS   │             │
+│   │   App   │ │   App   │ │   App   │ │ Service │ │ Service │             │
+│   └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘             │
+│        │           │           │           │           │                   │
+│        └───────────┴───────────┴───────────┴───────────┘                   │
+│                                │                                           │
+│                                ▼                                           │
+│   ┌─────────────────────────────────────────────────────────────────────┐ │
+│   │                      KAFKA CLUSTER                                   │ │
+│   │                                                                      │ │
+│   │  ┌─────────────────────────────────────────────────────────────┐    │ │
+│   │  │ TOPIC: user-events                                          │    │ │
+│   │  │ Events: play, pause, seek, complete, search, browse         │    │ │
+│   │  │ Volume: 500K events/min                                     │    │ │
+│   │  │ Partitions: 24 (by user_id hash)                           │    │ │
+│   │  └─────────────────────────────────────────────────────────────┘    │ │
+│   │                                                                      │ │
+│   │  ┌─────────────────────────────────────────────────────────────┐    │ │
+│   │  │ TOPIC: ad-events                                            │    │ │
+│   │  │ Events: impression, click, complete, skip                   │    │ │
+│   │  │ Volume: 100K events/min                                     │    │ │
+│   │  │ Partitions: 12 (by ad_id hash)                             │    │ │
+│   │  └─────────────────────────────────────────────────────────────┘    │ │
+│   │                                                                      │ │
+│   │  ┌─────────────────────────────────────────────────────────────┐    │ │
+│   │  │ TOPIC: content-events                                       │    │ │
+│   │  │ Events: publish, update, transcode-complete, delete         │    │ │
+│   │  │ Volume: 1K events/min                                       │    │ │
+│   │  │ Partitions: 6                                               │    │ │
+│   │  └─────────────────────────────────────────────────────────────┘    │ │
+│   │                                                                      │ │
+│   │  ┌─────────────────────────────────────────────────────────────┐    │ │
+│   │  │ TOPIC: payment-events                                       │    │ │
+│   │  │ Events: subscribe, renew, cancel, payment-success/fail      │    │ │
+│   │  │ Volume: 10K events/min                                      │    │ │
+│   │  │ Partitions: 6                                               │    │ │
+│   │  └─────────────────────────────────────────────────────────────┘    │ │
+│   │                                                                      │ │
+│   │  ┌─────────────────────────────────────────────────────────────┐    │ │
+│   │  │ TOPIC: notification-events                                  │    │ │
+│   │  │ Events: send-push, send-email, send-sms                     │    │ │
+│   │  │ Volume: 50K events/min                                      │    │ │
+│   │  │ Partitions: 12                                              │    │ │
+│   │  └─────────────────────────────────────────────────────────────┘    │ │
+│   │                                                                      │ │
+│   └─────────────────────────────────────────────────────────────────────┘ │
+│                                │                                           │
+│                                ▼                                           │
+│   CONSUMERS (Services that process events)                                 │
+│   ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐         │
+│   │ Analytics   │ │Recommendation│ │ Notification│ │   Billing   │         │
+│   │  Service    │ │   Engine    │ │   Service   │ │   Service   │         │
+│   │             │ │             │ │             │ │             │         │
+│   │ • ClickHouse│ │ • ML Model  │ │ • Push/Email│ │ • Invoices  │         │
+│   │ • Dashboards│ │ • Real-time │ │ • SMS       │ │ • Reports   │         │
+│   └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘         │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Event Schema Examples:**
+
+```json
+// user-events topic
+{
+  "event_id": "uuid",
+  "event_type": "play",
+  "user_id": "uuid",
+  "profile_id": "uuid",
+  "content_id": "uuid",
+  "position_seconds": 1234,
+  "quality": "1080p",
+  "device": "android_mobile",
+  "geo": "IN-BR",
+  "timestamp": "2026-02-17T10:30:00Z"
+}
+
+// ad-events topic
+{
+  "event_id": "uuid",
+  "event_type": "impression",
+  "ad_id": "uuid",
+  "campaign_id": "uuid",
+  "user_id": "uuid",
+  "content_id": "uuid",
+  "position": "pre-roll",
+  "quartile": 25,
+  "skipped": false,
+  "timestamp": "2026-02-17T10:30:00Z"
+}
+```
+
+**Kafka Consumer Groups:**
+
+| Consumer Group | Topics Consumed | Purpose |
+|----------------|-----------------|---------|
+| `analytics-consumer` | user-events, ad-events | Write to ClickHouse for dashboards |
+| `recommendation-consumer` | user-events | Update user preferences in real-time |
+| `notification-consumer` | notification-events | Send push/email/SMS |
+| `billing-consumer` | payment-events | Generate invoices, update status |
+| `search-indexer` | content-events | Update Elasticsearch index |
+| `cache-invalidator` | content-events | Invalidate Redis cache |
+
+**Real-Time Data Pipeline:**
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    REAL-TIME ANALYTICS PIPELINE                              │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│   User watches video                                                       │
+│         │                                                                   │
+│         ▼                                                                   │
+│   App sends event to Kafka (user-events topic)                             │
+│         │                                                                   │
+│         ├──────────────────────────────────────────────────────────┐        │
+│         │                                                          │        │
+│         ▼                                                          ▼        │
+│   ┌─────────────────┐                                    ┌─────────────────┐│
+│   │ Spark Streaming │                                    │  Flink / KSQL   ││
+│   │ (Batch: 1 min)  │                                    │  (Real-time)    ││
+│   └────────┬────────┘                                    └────────┬────────┘│
+│            │                                                      │         │
+│            ▼                                                      ▼         │
+│   ┌─────────────────┐                                    ┌─────────────────┐│
+│   │   ClickHouse    │                                    │  Redis (Live)   ││
+│   │ (Historical)    │                                    │  • Live viewers ││
+│   │ • Dashboards    │                                    │  • Trending now ││
+│   │ • Reports       │                                    │  • Top 10       ││
+│   └─────────────────┘                                    └─────────────────┘│
+│                                                                             │
+│   Use Cases Enabled:                                                       │
+│   • "10,532 people watching this movie" (live count)                       │
+│   • Real-time trending calculation                                         │
+│   • Instant recommendation updates                                         │
+│   • Live ad revenue tracking                                               │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Kafka for Video Processing Pipeline:**
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    VIDEO PROCESSING WITH KAFKA                               │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│   Upload Complete                                                          │
+│         │                                                                   │
+│         ▼                                                                   │
+│   Publish to Kafka: content-events                                         │
+│   { "event": "upload-complete", "content_id": "xxx", "s3_path": "..." }   │
+│         │                                                                   │
+│         ▼                                                                   │
+│   Transcoding Service (Consumer)                                           │
+│         │                                                                   │
+│         ├── Start transcoding                                              │
+│         ├── Publish: { "event": "transcode-started" }                      │
+│         ├── ... processing ...                                             │
+│         └── Publish: { "event": "transcode-complete", "qualities": [...] } │
+│                     │                                                       │
+│         ┌───────────┴───────────┐                                          │
+│         ▼                       ▼                                          │
+│   CDN Service              QC Service                                      │
+│   (Upload to CloudFront)   (Quality check)                                 │
+│         │                       │                                          │
+│         └───────────┬───────────┘                                          │
+│                     ▼                                                       │
+│   Publish: { "event": "content-live", "cdn_url": "..." }                  │
+│                     │                                                       │
+│                     ▼                                                       │
+│   Notification Service → Send alert to admin                              │
+│   Search Indexer → Update Elasticsearch                                    │
+│   Cache Invalidator → Clear content cache                                  │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 3.4 Video Delivery Pipeline (Renumbered)
 
 ```
 ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
@@ -3719,7 +3933,7 @@ Transcoding Output Formats:
 │   │  └─────────────────┘                  └─────────────────┘           │  │
 │   └─────────────────────────────────────────────────────────────────────┘  │
 │                                                                             │
-│   Expected Scale: 10,000 - 100,000 concurrent users                        │
+│   Expected Scale: 1 - 10 Million concurrent users                        │
 │   Primary Device: Mobile (Android 80%, iOS 15%, Web 5%)                    │
 │   Network: 4G LTE dominant, some 5G in urban, 3G in rural                  │
 │                                                                             │
@@ -3937,7 +4151,7 @@ Origin Shield: Mumbai (reduces origin load by 80%)
 #### 3.4.10 CDN Cost Estimation (Medium Scale)
 
 ```
-Monthly Cost Breakdown (10K-100K concurrent users):
+Monthly Cost Breakdown (1M-10M concurrent users):
 ┌──────────────────────────────────────────────────────────────────────────┐
 │                                                                          │
 │   Assumptions:                                                           │
@@ -4377,7 +4591,8 @@ Paid Tiers:
 | Storage | S3 (videos), DynamoDB (metadata) |
 | Cache | Redis Cluster (6 nodes) |
 | Search | Elasticsearch / OpenSearch |
-| Queue | SQS / RabbitMQ |
+| Message Queue | SQS (simple tasks) |
+| Event Streaming | Apache Kafka (analytics, real-time) |
 | Monitoring | CloudWatch + Grafana |
 
 ### Third-Party Integrations
