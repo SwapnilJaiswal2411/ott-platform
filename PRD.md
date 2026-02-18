@@ -23,9 +23,10 @@
 3. [Technical Architecture](#3-technical-architecture)
    - 3.1 [High-Level Architecture](#31-high-level-architecture)
    - 3.2 [Microservices Architecture](#32-microservices-architecture)
-   - 3.3 [Video Delivery Pipeline](#33-video-delivery-pipeline)
+   - 3.3 [Apache Kafka Event Streaming](#33-apache-kafka-event-streaming-architecture)
    - 3.4 [CDN & Video Delivery Infrastructure](#34-cdn--video-delivery-infrastructure-india-focused)
    - 3.5 [Database Schema](#35-database-schema-core-tables)
+   - 3.6 [Third-Party Service Integration (Hybrid)](#36-third-party-service-integration-hybrid-architecture)
 4. [Non-Functional Requirements](#4-non-functional-requirements)
 5. [Platform Support](#5-platform-support)
 6. [Analytics & Metrics](#6-analytics--metrics)
@@ -55,6 +56,8 @@
 |---------|------|--------|---------|
 | 1.0 | 11 Feb 2026 | Product Team | Initial PRD with core features |
 | 2.0 | 17 Feb 2026 | Product Team | Added CDN, CMS, Payment, Search, Playback sections |
+| 2.1 | 18 Feb 2026 | Product Team | Added Kafka, scaled to 1M+ users |
+| 3.0 | 18 Feb 2026 | Product Team | Added Hybrid Architecture (Bunny.net + AWS), Android integration |
 
 ---
 
@@ -4297,6 +4300,489 @@ CREATE TABLE watchlist (
 
 ---
 
+### 3.6 Third-Party Service Integration (Hybrid Architecture)
+
+MahuaPlay uses a **hybrid architecture** combining Bunny.net for video pipeline and AWS for backend services. This approach minimizes development effort while maintaining enterprise-grade scalability.
+
+#### 3.6.1 Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    MahuaPlay Hybrid Architecture                            │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                    VIDEO PIPELINE (Bunny.net)                        │   │
+│  │                                                                       │   │
+│  │   ┌──────────┐   ┌────────────┐   ┌──────────┐   ┌──────────────┐   │   │
+│  │   │  Bunny   │ → │   Bunny    │ → │  Bunny   │ → │   Bunny      │   │   │
+│  │   │ Storage  │   │   Stream   │   │   CDN    │   │   Player     │   │   │
+│  │   │ (Upload) │   │ (Transcode)│   │ (Deliver)│   │   (Embed)    │   │   │
+│  │   └──────────┘   └────────────┘   └──────────┘   └──────────────┘   │   │
+│  │        │               │               │               │             │   │
+│  │        └───────────────┴───────────────┴───────────────┘             │   │
+│  │                            Built-in DRM                               │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                    │                                        │
+│                                    │ Webhooks                               │
+│                                    ▼                                        │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                    BACKEND SERVICES (AWS India)                      │   │
+│  │                                                                       │   │
+│  │   ┌──────────┐   ┌────────────┐   ┌──────────┐   ┌──────────────┐   │   │
+│  │   │   ECS    │   │   Aurora   │   │  Elasti  │   │    Amazon    │   │   │
+│  │   │ Fargate  │   │ PostgreSQL │   │  Cache   │   │     MSK      │   │   │
+│  │   │  (API)   │   │   (Data)   │   │ (Redis)  │   │   (Kafka)    │   │   │
+│  │   └──────────┘   └────────────┘   └──────────┘   └──────────────┘   │   │
+│  │                                                                       │   │
+│  │   ┌──────────┐   ┌────────────┐   ┌──────────┐   ┌──────────────┐   │   │
+│  │   │ Cognito  │   │ OpenSearch │   │    S3    │   │   Lambda     │   │   │
+│  │   │  (Auth)  │   │  (Search)  │   │ (Assets) │   │  (Webhooks)  │   │   │
+│  │   └──────────┘   └────────────┘   └──────────┘   └──────────────┘   │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                    EXTERNAL SERVICES                                 │   │
+│  │                                                                       │   │
+│  │   ┌──────────┐   ┌────────────┐   ┌──────────┐   ┌──────────────┐   │   │
+│  │   │ Razorpay │   │  Firebase  │   │  Sentry  │   │   Mixpanel   │   │   │
+│  │   │(Payments)│   │   (Push)   │   │ (Errors) │   │ (Analytics)  │   │   │
+│  │   └──────────┘   └────────────┘   └──────────┘   └──────────────┘   │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### 3.6.2 Bunny.net Video Pipeline
+
+| Component | Service | Purpose | Pricing |
+|-----------|---------|---------|---------|
+| **Video Storage** | Bunny Storage | Raw video upload storage | $0.01/GB/month |
+| **Transcoding** | Bunny Stream | Automatic ABR encoding (240p-4K) | $1/1000 minutes |
+| **CDN Delivery** | Bunny CDN | Global edge delivery | $0.01/GB (Asia) |
+| **DRM Protection** | Bunny DRM Add-on | Widevine + FairPlay | Included |
+| **Video Player** | Bunny Player | Embeddable player with controls | Included |
+
+##### Video Upload Flow (Bunny Stream)
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│   Admin     │     │   Bunny     │     │   Bunny     │     │   Backend   │
+│   CMS       │     │   Storage   │     │   Stream    │     │   Webhook   │
+└──────┬──────┘     └──────┬──────┘     └──────┬──────┘     └──────┬──────┘
+       │                   │                   │                   │
+       │ 1. Upload Video   │                   │                   │
+       │──────────────────>│                   │                   │
+       │                   │                   │                   │
+       │                   │ 2. Auto-trigger   │                   │
+       │                   │   transcoding     │                   │
+       │                   │──────────────────>│                   │
+       │                   │                   │                   │
+       │                   │                   │ 3. Transcode to   │
+       │                   │                   │    multiple       │
+       │                   │                   │    qualities      │
+       │                   │                   │    (240p-4K)      │
+       │                   │                   │                   │
+       │                   │                   │ 4. Webhook:       │
+       │                   │                   │    encoding_done  │
+       │                   │                   │──────────────────>│
+       │                   │                   │                   │
+       │                   │                   │       5. Update   │
+       │ 6. Video Ready    │                   │       content DB  │
+       │<─────────────────────────────────────────────────────────│
+       │                   │                   │                   │
+```
+
+##### Bunny Stream API Integration
+
+```kotlin
+// Android - Bunny Video Player Integration
+class BunnyPlayerActivity : AppCompatActivity() {
+
+    private lateinit var webView: WebView
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        val videoId = intent.getStringExtra("VIDEO_ID")
+        val libraryId = BuildConfig.BUNNY_LIBRARY_ID
+
+        // Embed Bunny Player
+        val embedUrl = "https://iframe.mediadelivery.net/embed/$libraryId/$videoId"
+
+        webView.settings.javaScriptEnabled = true
+        webView.loadUrl(embedUrl)
+    }
+}
+```
+
+```javascript
+// Backend - Bunny Webhook Handler
+app.post('/webhooks/bunny', async (req, res) => {
+    const { VideoGuid, Status, Message } = req.body;
+
+    if (Status === 'Finished') {
+        // Update content status in database
+        await db.content.update({
+            where: { bunnyVideoId: VideoGuid },
+            data: {
+                status: 'PUBLISHED',
+                encodingCompleted: new Date(),
+                streamUrl: `https://vz-xxxxx.b-cdn.net/${VideoGuid}/playlist.m3u8`
+            }
+        });
+
+        // Notify via Kafka
+        await kafka.send('content-events', {
+            type: 'ENCODING_COMPLETE',
+            videoId: VideoGuid
+        });
+    }
+
+    res.status(200).send('OK');
+});
+```
+
+##### Bunny CDN Configuration
+
+```json
+{
+    "pullZone": {
+        "name": "mahuaplay-videos",
+        "originUrl": "https://storage.bunnycdn.com/mahuaplay/",
+        "originType": "StorageZone",
+        "enableGeoZoneIndia": true,
+        "enableSmartCache": true,
+        "cacheControlMaxAge": 31536000,
+        "enableTokenAuthentication": true,
+        "tokenAuthenticationKey": "secure-key-here"
+    },
+    "edgeLocations": [
+        "Mumbai (IN)",
+        "Chennai (IN)",
+        "Delhi (IN)",
+        "Bangalore (IN)",
+        "Hyderabad (IN)",
+        "Kolkata (IN)"
+    ],
+    "streamLibrary": {
+        "name": "mahuaplay-stream",
+        "enableDRM": true,
+        "bitrates": [240, 360, 480, 720, 1080, 2160],
+        "enableMP4Fallback": true,
+        "watermarkEnabled": false,
+        "captions": true
+    }
+}
+```
+
+#### 3.6.3 AWS Backend Services
+
+| Component | AWS Service | Purpose | Pricing Model |
+|-----------|-------------|---------|---------------|
+| **Compute** | ECS Fargate | API containers | Per vCPU/GB-hour |
+| **Database** | Aurora PostgreSQL | User, content metadata | Per ACU-hour |
+| **Cache** | ElastiCache Redis | Session, content cache | Per node-hour |
+| **Search** | OpenSearch | Content search | Per instance-hour |
+| **Auth** | Cognito | User authentication | Per MAU |
+| **Events** | MSK (Kafka) | Event streaming | Per broker-hour |
+| **Storage** | S3 | Thumbnails, assets | Per GB |
+| **Functions** | Lambda | Webhooks, async tasks | Per invocation |
+
+##### AWS Service Configuration
+
+```yaml
+# infrastructure/aws-services.yaml
+
+# ECS Fargate - API Services
+ApiService:
+  Type: AWS::ECS::Service
+  Properties:
+    ServiceName: mahuaplay-api
+    Cluster: !Ref ECSCluster
+    LaunchType: FARGATE
+    DesiredCount: 6
+    TaskDefinition: !Ref ApiTaskDef
+    NetworkConfiguration:
+      AwsvpcConfiguration:
+        Subnets: !Ref PrivateSubnets
+        SecurityGroups: [!Ref ApiSecurityGroup]
+    LoadBalancers:
+      - ContainerName: api
+        ContainerPort: 3000
+        TargetGroupArn: !Ref ApiTargetGroup
+
+# Aurora PostgreSQL - Database
+Database:
+  Type: AWS::RDS::DBCluster
+  Properties:
+    DBClusterIdentifier: mahuaplay-db
+    Engine: aurora-postgresql
+    EngineVersion: "15.4"
+    ServerlessV2ScalingConfiguration:
+      MinCapacity: 2
+      MaxCapacity: 64
+    DatabaseName: mahuaplay
+    MasterUsername: !Ref DBUsername
+    MasterUserPassword: !Ref DBPassword
+    EnableHttpEndpoint: true
+    StorageEncrypted: true
+
+# ElastiCache Redis - Caching
+RedisCluster:
+  Type: AWS::ElastiCache::ReplicationGroup
+  Properties:
+    ReplicationGroupDescription: MahuaPlay Redis Cluster
+    Engine: redis
+    EngineVersion: "7.0"
+    CacheNodeType: cache.r6g.large
+    NumNodeGroups: 3
+    ReplicasPerNodeGroup: 2
+    AutomaticFailoverEnabled: true
+    AtRestEncryptionEnabled: true
+    TransitEncryptionEnabled: true
+
+# Amazon MSK - Kafka
+KafkaCluster:
+  Type: AWS::MSK::Cluster
+  Properties:
+    ClusterName: mahuaplay-kafka
+    KafkaVersion: "3.5.1"
+    NumberOfBrokerNodes: 6
+    BrokerNodeGroupInfo:
+      InstanceType: kafka.m5.large
+      StorageInfo:
+        EBSStorageInfo:
+          VolumeSize: 500
+      ClientSubnets: !Ref PrivateSubnets
+      SecurityGroups: [!Ref KafkaSecurityGroup]
+```
+
+#### 3.6.4 Service Integration Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        Content Publishing Flow                          │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  1. ADMIN UPLOADS VIDEO                                                 │
+│  ┌─────────┐      ┌─────────────────┐                                  │
+│  │ Admin   │ ───> │ Bunny Storage   │                                  │
+│  │ CMS     │      │ (Raw Upload)    │                                  │
+│  └─────────┘      └────────┬────────┘                                  │
+│                            │                                            │
+│  2. AUTO-TRANSCODE         ▼                                            │
+│                   ┌─────────────────┐                                  │
+│                   │ Bunny Stream    │                                  │
+│                   │ (Transcoding)   │                                  │
+│                   └────────┬────────┘                                  │
+│                            │                                            │
+│  3. WEBHOOK NOTIFICATION   ▼                                            │
+│                   ┌─────────────────┐      ┌─────────────────┐         │
+│                   │ AWS Lambda      │ ───> │ AWS Aurora      │         │
+│                   │ (Webhook)       │      │ (Update Status) │         │
+│                   └────────┬────────┘      └─────────────────┘         │
+│                            │                                            │
+│  4. KAFKA EVENT            ▼                                            │
+│                   ┌─────────────────┐      ┌─────────────────┐         │
+│                   │ Amazon MSK      │ ───> │ Recommendation  │         │
+│                   │ (Kafka)         │      │ Service Update  │         │
+│                   └────────┬────────┘      └─────────────────┘         │
+│                            │                                            │
+│  5. CACHE INVALIDATION     ▼                                            │
+│                   ┌─────────────────┐                                  │
+│                   │ ElastiCache     │                                  │
+│                   │ (Redis Update)  │                                  │
+│                   └─────────────────┘                                  │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+#### 3.6.5 Android App Integration
+
+```kotlin
+// app/build.gradle.kts
+dependencies {
+    // Core
+    implementation("androidx.core:core-ktx:1.12.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
+
+    // Jetpack Compose UI
+    implementation("androidx.compose.ui:ui:1.6.0")
+    implementation("androidx.compose.material3:material3:1.2.0")
+
+    // Video Player - ExoPlayer for native playback (backup)
+    implementation("androidx.media3:media3-exoplayer:1.2.0")
+    implementation("androidx.media3:media3-exoplayer-hls:1.2.0")
+    implementation("androidx.media3:media3-ui:1.2.0")
+
+    // Networking
+    implementation("com.squareup.retrofit2:retrofit:2.9.0")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    // DI
+    implementation("com.google.dagger:hilt-android:2.50")
+
+    // Firebase
+    implementation("com.google.firebase:firebase-messaging:23.4.0")
+
+    // Razorpay
+    implementation("com.razorpay:checkout:1.6.33")
+}
+```
+
+```kotlin
+// VideoPlayerScreen.kt - Hybrid Player (Bunny + ExoPlayer fallback)
+@Composable
+fun VideoPlayerScreen(
+    videoId: String,
+    viewModel: VideoPlayerViewModel = hiltViewModel()
+) {
+    val videoState by viewModel.videoState.collectAsState()
+
+    when (val state = videoState) {
+        is VideoState.Loading -> LoadingIndicator()
+
+        is VideoState.Ready -> {
+            if (state.useBunnyPlayer) {
+                // Bunny Player (WebView embed - includes DRM)
+                BunnyPlayerEmbed(
+                    videoId = state.bunnyVideoId,
+                    libraryId = BuildConfig.BUNNY_LIBRARY_ID,
+                    token = state.playbackToken
+                )
+            } else {
+                // ExoPlayer fallback for offline/downloaded content
+                ExoPlayerView(
+                    hlsUrl = state.hlsUrl,
+                    startPosition = state.resumePosition
+                )
+            }
+        }
+
+        is VideoState.Error -> ErrorView(state.message)
+    }
+}
+
+@Composable
+fun BunnyPlayerEmbed(
+    videoId: String,
+    libraryId: String,
+    token: String
+) {
+    AndroidView(
+        factory = { context ->
+            WebView(context).apply {
+                settings.javaScriptEnabled = true
+                settings.domStorageEnabled = true
+                settings.mediaPlaybackRequiresUserGesture = false
+
+                val embedUrl = buildString {
+                    append("https://iframe.mediadelivery.net/embed/")
+                    append("$libraryId/$videoId")
+                    append("?token=$token")
+                    append("&autoplay=true")
+                    append("&preload=true")
+                }
+
+                loadUrl(embedUrl)
+            }
+        }
+    )
+}
+```
+
+#### 3.6.6 Cost Comparison
+
+| Component | Self-Hosted (AWS) | Hybrid (Bunny + AWS) | Savings |
+|-----------|-------------------|----------------------|---------|
+| **Video Storage (10TB)** | $230/mo (S3) | $100/mo (Bunny) | 57% |
+| **Transcoding (1000 hrs)** | $900/mo (MediaConvert) | $60/mo (Bunny) | 93% |
+| **CDN (50TB/mo)** | $4,250/mo (CloudFront) | $500/mo (Bunny) | 88% |
+| **DRM License Server** | $500/mo (3rd party) | $0 (Included) | 100% |
+| **Player Development** | $5,000 (one-time) | $0 (Included) | 100% |
+| **Backend Services** | $2,000/mo (AWS) | $2,000/mo (AWS) | 0% |
+| **Total Monthly** | ~$7,880/mo | ~$2,660/mo | **66%** |
+
+#### 3.6.7 Service Responsibility Matrix
+
+| Responsibility | Bunny.net | AWS | In-House |
+|----------------|-----------|-----|----------|
+| Video Upload | ✅ | | |
+| Transcoding | ✅ | | |
+| CDN Delivery | ✅ | | |
+| DRM | ✅ | | |
+| Video Player | ✅ | | |
+| User Authentication | | ✅ Cognito | |
+| User Database | | ✅ Aurora | |
+| Content Metadata | | ✅ Aurora | |
+| Search | | ✅ OpenSearch | |
+| Caching | | ✅ ElastiCache | |
+| Event Streaming | | ✅ MSK | |
+| Payment Processing | | | ✅ Razorpay |
+| Push Notifications | | | ✅ Firebase |
+| Android App | | | ✅ Kotlin |
+| Admin CMS | | | ✅ React |
+| API Development | | | ✅ Node.js |
+
+#### 3.6.8 API Endpoints
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          MahuaPlay API Structure                        │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  AWS API Gateway + ECS Fargate                                          │
+│  ─────────────────────────────────                                      │
+│                                                                         │
+│  Authentication (Cognito)                                               │
+│  POST   /api/v1/auth/register                                          │
+│  POST   /api/v1/auth/login                                             │
+│  POST   /api/v1/auth/refresh                                           │
+│  POST   /api/v1/auth/logout                                            │
+│                                                                         │
+│  User & Profiles                                                        │
+│  GET    /api/v1/users/me                                               │
+│  PUT    /api/v1/users/me                                               │
+│  GET    /api/v1/profiles                                               │
+│  POST   /api/v1/profiles                                               │
+│  PUT    /api/v1/profiles/:id                                           │
+│                                                                         │
+│  Content                                                                │
+│  GET    /api/v1/content                                                │
+│  GET    /api/v1/content/:id                                            │
+│  GET    /api/v1/content/:id/playback   → Returns Bunny stream URL      │
+│  GET    /api/v1/content/featured                                       │
+│  GET    /api/v1/content/trending                                       │
+│                                                                         │
+│  Search                                                                 │
+│  GET    /api/v1/search?q=                                              │
+│  GET    /api/v1/search/suggestions                                     │
+│                                                                         │
+│  Subscriptions & Payments                                               │
+│  GET    /api/v1/subscriptions/plans                                    │
+│  POST   /api/v1/subscriptions/checkout  → Razorpay                     │
+│  POST   /api/v1/subscriptions/verify                                   │
+│  GET    /api/v1/subscriptions/status                                   │
+│                                                                         │
+│  Watchlist & History                                                    │
+│  GET    /api/v1/watchlist                                              │
+│  POST   /api/v1/watchlist/:contentId                                   │
+│  DELETE /api/v1/watchlist/:contentId                                   │
+│  GET    /api/v1/history                                                │
+│  POST   /api/v1/history/progress                                       │
+│                                                                         │
+│  Admin CMS (Internal)                                                   │
+│  POST   /api/v1/admin/content           → Triggers Bunny upload        │
+│  PUT    /api/v1/admin/content/:id                                      │
+│  DELETE /api/v1/admin/content/:id                                      │
+│  GET    /api/v1/admin/analytics                                        │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
 ## 4. Non-Functional Requirements
 
 ### 4.1 Performance
@@ -4582,30 +5068,49 @@ Paid Tiers:
 | Notification | Node.js | Redis + SQS |
 | Analytics | Python + Spark | ClickHouse |
 
-### Infrastructure
-| Component | Service |
-|-----------|---------|
-| Cloud | AWS (Mumbai region primary) |
-| CDN | CloudFront + BunnyCDN |
-| Transcoding | AWS MediaConvert |
-| Storage | S3 (videos), DynamoDB (metadata) |
-| Cache | Redis Cluster (6 nodes) |
-| Search | Elasticsearch / OpenSearch |
-| Message Queue | SQS (simple tasks) |
-| Event Streaming | Apache Kafka (analytics, real-time) |
-| Monitoring | CloudWatch + Grafana |
+### Infrastructure (Hybrid Architecture)
+
+#### Video Pipeline (Bunny.net)
+| Component | Service | Notes |
+|-----------|---------|-------|
+| Video Storage | Bunny Storage | Raw upload storage |
+| Transcoding | Bunny Stream | Auto ABR encoding (240p-4K) |
+| CDN Delivery | Bunny CDN | India PoPs (Mumbai, Chennai, Delhi) |
+| DRM | Bunny DRM Add-on | Widevine + FairPlay (built-in) |
+| Video Player | Bunny Player | Embeddable, no development needed |
+
+#### Backend (AWS Mumbai)
+| Component | Service | Notes |
+|-----------|---------|-------|
+| Compute | ECS Fargate | Containerized API services |
+| Database | Aurora PostgreSQL | Serverless v2, auto-scaling |
+| Cache | ElastiCache Redis | 6-node cluster |
+| Search | OpenSearch | Content search, multilingual |
+| Auth | Cognito | User authentication |
+| Events | Amazon MSK | Kafka for event streaming |
+| Storage | S3 | Thumbnails, assets (NOT videos) |
+| Functions | Lambda | Webhooks, async processing |
+| Monitoring | CloudWatch + Grafana | Metrics and alerting |
 
 ### Third-Party Integrations
-| Category | Provider |
-|----------|----------|
-| Payment Gateway | Razorpay |
-| DRM | BuyDRM (Widevine, FairPlay, PlayReady) |
-| Push Notifications | Firebase Cloud Messaging |
-| Email | AWS SES |
-| SMS | MSG91 / Twilio |
-| Analytics | Mixpanel / Amplitude |
-| Crash Reporting | Sentry |
-| Ad Server | Google Ad Manager |
+| Category | Provider | Notes |
+|----------|----------|-------|
+| Payment Gateway | Razorpay | UPI, Cards, Wallets |
+| Push Notifications | Firebase Cloud Messaging | Android + iOS |
+| Email | AWS SES | Transactional emails |
+| SMS | MSG91 | OTP, notifications |
+| Analytics | Mixpanel | User behavior tracking |
+| Crash Reporting | Sentry | Error monitoring |
+| Ad Server | Google Ad Manager | AVOD monetization |
+
+### Development Stack
+| Component | Technology |
+|-----------|------------|
+| Android App | Kotlin + Jetpack Compose |
+| Video Player | Bunny Player (WebView) + ExoPlayer (offline) |
+| API Backend | Node.js + Express |
+| Admin CMS | React.js + Next.js |
+| Infrastructure | Terraform + AWS CDK |
 
 ---
 
