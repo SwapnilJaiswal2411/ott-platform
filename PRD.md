@@ -136,83 +136,161 @@ MahuaPlay is a next-generation Over-The-Top (OTT) streaming platform that delive
 | **Watch Party** | ❌ | ❌ | ✓ | ✓ |
 | **Offline Validity** | N/A | N/A | 30 days | 30 days |
 
-#### 2.1.4 Payment Gateway Integration
+#### 2.1.4 Payment Gateway Integration (Sabpaisa)
+
+MahuaPlay uses **Sabpaisa** as the payment gateway. Payment is handled via **redirect-based integration** - user is redirected to Sabpaisa's hosted payment page, completes payment, and returns to the app.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                      PAYMENT ARCHITECTURE                                    │
+│                    SABPAISA REDIRECT-BASED PAYMENT FLOW                      │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│   ┌─────────────────────────────────────────────────────────────────────┐  │
-│   │                    PAYMENT GATEWAY: RAZORPAY                         │  │
-│   │                    (Primary for India)                               │  │
-│   └─────────────────────────────────────────────────────────────────────┘  │
-│                                                                             │
-│   SUPPORTED PAYMENT METHODS:                                               │
-│   ┌─────────────────────────────────────────────────────────────────────┐  │
-│   │                                                                      │  │
-│   │   UPI (Primary - 60% transactions)                                  │  │
-│   │   ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐      │  │
-│   │   │ Google  │ │ PhonePe │ │  Paytm  │ │  BHIM   │ │  Other  │      │  │
-│   │   │  Pay    │ │         │ │         │ │   UPI   │ │  Apps   │      │  │
-│   │   └─────────┘ └─────────┘ └─────────┘ └─────────┘ └─────────┘      │  │
-│   │                                                                      │  │
-│   │   Cards (25% transactions)                                          │  │
-│   │   ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐                   │  │
-│   │   │  Visa   │ │  Master │ │  Rupay  │ │  Amex   │                   │  │
-│   │   │         │ │  Card   │ │         │ │         │                   │  │
-│   │   └─────────┘ └─────────┘ └─────────┘ └─────────┘                   │  │
-│   │                                                                      │  │
-│   │   Wallets (10% transactions)                                        │  │
-│   │   ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐                   │  │
-│   │   │  Paytm  │ │  Amazon │ │ Mobikwik│ │Freecharge│                  │  │
-│   │   │  Wallet │ │   Pay   │ │         │ │         │                   │  │
-│   │   └─────────┘ └─────────┘ └─────────┘ └─────────┘                   │  │
-│   │                                                                      │  │
-│   │   Other (5% transactions)                                           │  │
-│   │   ┌─────────┐ ┌─────────┐ ┌─────────┐                               │  │
-│   │   │  Net    │ │   EMI   │ │  Pay    │                               │  │
-│   │   │ Banking │ │ (Cards) │ │  Later  │                               │  │
-│   │   └─────────┘ └─────────┘ └─────────┘                               │  │
-│   │                                                                      │  │
-│   └─────────────────────────────────────────────────────────────────────┘  │
-│                                                                             │
-│   PAYMENT FLOW:                                                            │
-│   ┌─────────────────────────────────────────────────────────────────────┐  │
-│   │                                                                      │  │
-│   │   User selects plan                                                 │  │
-│   │         │                                                           │  │
-│   │         ▼                                                           │  │
-│   │   Create Razorpay Order (server-side)                              │  │
-│   │         │                                                           │  │
-│   │         ▼                                                           │  │
-│   │   Open Razorpay Checkout (client-side)                             │  │
-│   │         │                                                           │  │
-│   │         ▼                                                           │  │
-│   │   User completes payment                                           │  │
-│   │         │                                                           │  │
-│   │         ▼                                                           │  │
-│   │   Razorpay Webhook → Verify signature                              │  │
-│   │         │                                                           │  │
-│   │         ▼                                                           │  │
-│   │   Activate subscription                                            │  │
-│   │         │                                                           │  │
-│   │         ▼                                                           │  │
-│   │   Send confirmation (Email + SMS + Push)                           │  │
-│   │                                                                      │  │
-│   └─────────────────────────────────────────────────────────────────────┘  │
+│   ┌─────────────┐      ┌─────────────┐      ┌─────────────┐                │
+│   │  MahuaPlay  │      │   Sabpaisa  │      │  MahuaPlay  │                │
+│   │     App     │      │   Gateway   │      │   Backend   │                │
+│   └──────┬──────┘      └──────┬──────┘      └──────┬──────┘                │
+│          │                    │                    │                        │
+│   1. User selects plan        │                    │                        │
+│          │                    │                    │                        │
+│          ▼                    │                    │                        │
+│   2. App calls backend        │                    │                        │
+│      to create order ─────────────────────────────>│                        │
+│          │                    │                    │                        │
+│          │                    │      3. Backend creates order               │
+│          │                    │         generates payment URL               │
+│          │<────────────────────────────────────────│                        │
+│          │                    │                    │                        │
+│   4. App redirects to         │                    │                        │
+│      Sabpaisa payment URL ───>│                    │                        │
+│          │                    │                    │                        │
+│          │              5. User completes          │                        │
+│          │                 payment on              │                        │
+│          │                 Sabpaisa page           │                        │
+│          │                    │                    │                        │
+│          │              6. Sabpaisa redirects      │                        │
+│          │<───────────────────│                    │                        │
+│          │                    │                    │                        │
+│          │                    │   7. Webhook notification                   │
+│          │                    │──────────────────>│                        │
+│          │                    │                    │                        │
+│          │                    │      8. Verify signature                    │
+│          │                    │         Activate subscription               │
+│          │<────────────────────────────────────────│                        │
+│          │                    │                    │                        │
+│   9. Show success screen      │                    │                        │
+│      User can start watching  │                    │                        │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Payment Gateway Fees:**
-| Method | Razorpay Fee | Net to Platform |
-|--------|--------------|-----------------|
-| UPI | 0% (until govt subsidy) | 100% |
-| Debit Card | 0.9% | 99.1% |
-| Credit Card | 1.8% | 98.2% |
-| Net Banking | ₹9 flat | Variable |
-| Wallets | 1.5% | 98.5% |
+**Sabpaisa Integration Details:**
+
+| Parameter | Value |
+|-----------|-------|
+| **Integration Type** | Redirect (Hosted Payment Page) |
+| **Gateway URL** | `https://securepay.sabpaisa.in/SabPaisa/sabPaisaInit` |
+| **Response Type** | Redirect back to app + Webhook |
+| **Supported Methods** | UPI, Cards, Net Banking, Wallets (handled by Sabpaisa) |
+
+**API Integration:**
+
+```javascript
+// Backend - Create Sabpaisa Payment Request
+async function createPaymentOrder(userId, planId, amount) {
+    const order = await db.orders.create({
+        userId,
+        planId,
+        amount,
+        status: 'PENDING',
+        orderId: generateOrderId()
+    });
+
+    // Generate Sabpaisa payment URL with parameters
+    const paymentParams = {
+        clientCode: process.env.SABPAISA_CLIENT_CODE,
+        transUserName: process.env.SABPAISA_USERNAME,
+        transUserPassword: process.env.SABPAISA_PASSWORD,
+        clientTxnId: order.orderId,
+        amount: amount,
+        amountType: 'INR',
+        payerName: user.name,
+        payerEmail: user.email,
+        payerMobile: user.phone,
+        callbackUrl: `${BASE_URL}/api/v1/payments/callback`,
+        channelId: 'WEB',  // or 'APP' for mobile
+        mcc: '5968',       // OTT/Streaming services
+    };
+
+    const checksum = generateSabpaisaChecksum(paymentParams);
+
+    return {
+        orderId: order.orderId,
+        paymentUrl: buildSabpaisaUrl(paymentParams, checksum)
+    };
+}
+
+// Backend - Handle Sabpaisa Webhook
+app.post('/api/v1/payments/webhook', async (req, res) => {
+    const { clientTxnId, sabpaisaTxnId, status, statusCode } = req.body;
+
+    // Verify checksum
+    if (!verifySabpaisaChecksum(req.body)) {
+        return res.status(400).send('Invalid checksum');
+    }
+
+    if (status === 'SUCCESS' && statusCode === '0000') {
+        await activateSubscription(clientTxnId, sabpaisaTxnId);
+        await sendConfirmationNotification(clientTxnId);
+    } else {
+        await markPaymentFailed(clientTxnId, status);
+    }
+
+    res.status(200).send('OK');
+});
+```
+
+```kotlin
+// Android - Redirect to Sabpaisa
+fun initiatePayment(orderId: String, paymentUrl: String) {
+    // Option 1: Open in Chrome Custom Tab (recommended)
+    val customTabsIntent = CustomTabsIntent.Builder()
+        .setToolbarColor(ContextCompat.getColor(context, R.color.primary))
+        .build()
+    customTabsIntent.launchUrl(context, Uri.parse(paymentUrl))
+
+    // Option 2: Open in WebView
+    // webView.loadUrl(paymentUrl)
+}
+
+// Handle callback when user returns to app
+fun handlePaymentCallback(uri: Uri) {
+    val status = uri.getQueryParameter("status")
+    val orderId = uri.getQueryParameter("clientTxnId")
+
+    if (status == "SUCCESS") {
+        // Verify with backend and show success
+        viewModel.verifyPayment(orderId)
+    } else {
+        // Show failure message
+        showPaymentFailedDialog()
+    }
+}
+```
+
+**Callback URL Configuration:**
+| Platform | Callback URL |
+|----------|--------------|
+| Web | `https://mahuaplay.com/payment/callback` |
+| Android | `mahuaplay://payment/callback` (Deep Link) |
+| iOS | `mahuaplay://payment/callback` (Universal Link) |
+
+**Sabpaisa Response Codes:**
+| Code | Status | Action |
+|------|--------|--------|
+| 0000 | Success | Activate subscription |
+| 0001 | Failed | Show retry option |
+| 0002 | Pending | Wait for webhook |
+| 0003 | Cancelled | Return to plan selection |
 
 #### 2.1.5 Subscription Lifecycle Management
 
@@ -4345,7 +4423,7 @@ MahuaPlay uses a **hybrid architecture** combining Bunny.net for video pipeline 
 │  │                    EXTERNAL SERVICES                                 │   │
 │  │                                                                       │   │
 │  │   ┌──────────┐   ┌────────────┐   ┌──────────┐   ┌──────────────┐   │   │
-│  │   │ Razorpay │   │  Firebase  │   │  Sentry  │   │   Mixpanel   │   │   │
+│  │   │ Sabpaisa │   │  Firebase  │   │  Sentry  │   │   Mixpanel   │   │   │
 │  │   │(Payments)│   │   (Push)   │   │ (Errors) │   │ (Analytics)  │   │   │
 │  │   └──────────┘   └────────────┘   └──────────┘   └──────────────┘   │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
@@ -4626,8 +4704,8 @@ dependencies {
     // Firebase
     implementation("com.google.firebase:firebase-messaging:23.4.0")
 
-    // Razorpay
-    implementation("com.razorpay:checkout:1.6.33")
+    // Chrome Custom Tabs (for Sabpaisa redirect)
+    implementation("androidx.browser:browser:1.7.0")
 }
 ```
 
@@ -4719,7 +4797,7 @@ fun BunnyPlayerEmbed(
 | Search | | ✅ OpenSearch | |
 | Caching | | ✅ ElastiCache | |
 | Event Streaming | | ✅ MSK | |
-| Payment Processing | | | ✅ Razorpay |
+| Payment Processing | | | ✅ Sabpaisa (Redirect) |
 | Push Notifications | | | ✅ Firebase |
 | Android App | | | ✅ Kotlin |
 | Admin CMS | | | ✅ React |
@@ -4761,7 +4839,7 @@ fun BunnyPlayerEmbed(
 │                                                                         │
 │  Subscriptions & Payments                                               │
 │  GET    /api/v1/subscriptions/plans                                    │
-│  POST   /api/v1/subscriptions/checkout  → Razorpay                     │
+│  POST   /api/v1/subscriptions/checkout  → Sabpaisa redirect URL        │
 │  POST   /api/v1/subscriptions/verify                                   │
 │  GET    /api/v1/subscriptions/status                                   │
 │                                                                         │
@@ -5095,7 +5173,7 @@ Paid Tiers:
 ### Third-Party Integrations
 | Category | Provider | Notes |
 |----------|----------|-------|
-| Payment Gateway | Razorpay | UPI, Cards, Wallets |
+| Payment Gateway | Sabpaisa | Redirect-based (UPI, Cards, Wallets) |
 | Push Notifications | Firebase Cloud Messaging | Android + iOS |
 | Email | AWS SES | Transactional emails |
 | SMS | MSG91 | OTP, notifications |
