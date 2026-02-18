@@ -37,6 +37,7 @@
 9. [Success Criteria](#9-success-criteria)
 10. [Risks & Mitigations](#10-risks--mitigations)
 11. [Appendix](#11-appendix)
+12. [Tech Stack Summary](#12-tech-stack-summary-for-development-team)
 
 ---
 
@@ -2091,7 +2092,7 @@ Clients --> CloudFront/Bunny CDN --> API Gateway --> ECS/Lambda --> Aurora/Dynam
 | Lambda | Serverless functions |
 | CloudWatch + Grafana | Monitoring |
 
-### Third-Party Integrations
+**Third-Party Integrations**
 
 | Category | Provider | Notes |
 |----------|----------|-------|
@@ -2103,7 +2104,7 @@ Clients --> CloudFront/Bunny CDN --> API Gateway --> ECS/Lambda --> Aurora/Dynam
 | Crash Reporting | Sentry | Error monitoring |
 | Ad Server | Google Ad Manager | AVOD monetization |
 
-### Development Stack
+**Development Stack**
 
 | Component | Technology |
 |-----------|------------|
