@@ -664,44 +664,386 @@ CREATE TABLE active_streams (
 
 #### 2.2.6 Settings & Preferences
 
-**Settings Screen Sections:**
+**Settings Screen Layout:**
 
-**Account:**
-- Profile Settings
-- Subscription
-- Payment Methods
-- Linked Accounts (Google, Phone)
+| Section | Items | Description |
+|---------|-------|-------------|
+| Account | Profile, Subscription, Payment, Linked Accounts | User account management |
+| Playback | Quality, Autoplay, Subtitles | Video playback preferences |
+| App Settings | Language, Notifications, Data Saver | App behavior settings |
+| Devices | Manage Devices, Sign Out All | Device management |
+| Support | Help, Report Problem, Legal | Help and support options |
 
-**Playback:**
-- Video Quality (Auto / Low / Medium / High / HD)
-- Autoplay Next Episode (ON/OFF)
-- Autoplay Previews (ON/OFF)
+---
 
-**App Settings:**
-- App Language
-- Content Language
-- Notifications
-- Data Saver Mode
+##### 2.2.6.1 Account Settings
 
-**Support:**
-- Help Center
-- Report a Problem
-- Terms of Service
-- Privacy Policy
-- Log Out
-- App Version
+**Profile Settings:**
 
-**Settings Options:**
+| Element | Description |
+|---------|-------------|
+| Edit Profile | Opens current profile edit screen |
+| Switch Profile | Shows profile selector |
+| Manage Profiles | Add/edit/delete profiles |
+| Profile PIN | Set or change 4-digit PIN |
+
+**Profile Settings Workflow:**
+
+| Step | Action | Result |
+|------|--------|--------|
+| 1 | Tap "Profile Settings" | Opens profile management screen |
+| 2 | Tap current profile avatar | Opens edit screen for that profile |
+| 3 | Edit name/avatar/language | Changes saved on tap "Save" |
+| 4 | Toggle "Kids Profile" | Enables/disables child-safe mode |
+| 5 | Toggle "Require PIN" | Prompts to set 4-digit PIN |
+
+**Subscription Settings:**
+
+| Element | Description |
+|---------|-------------|
+| Current Plan | Shows plan name and price |
+| Renewal Date | Next billing date |
+| Change Plan | Upgrade/downgrade options |
+| Billing History | List of past payments |
+| Cancel Subscription | Cancel with confirmation |
+
+**Subscription Workflow:**
+
+| Action | Steps | Backend Behavior |
+|--------|-------|------------------|
+| View Plan | Tap Subscription | Fetch current subscription from API |
+| Upgrade | Tap Change Plan > Select higher plan > Confirm | Redirect to Sabpaisa, prorate charges |
+| Downgrade | Tap Change Plan > Select lower plan > Confirm | Schedule change for next billing cycle |
+| Cancel | Tap Cancel > Confirm reason > Confirm | Set cancel_at_period_end = true |
+| View Invoice | Tap Billing History > Tap invoice | Download PDF invoice |
+
+**Payment Methods:**
+
+| Element | Description |
+|---------|-------------|
+| Saved Cards | List of saved credit/debit cards |
+| UPI IDs | Saved UPI payment methods |
+| Add Payment | Add new card or UPI |
+| Set Default | Mark as primary payment method |
+| Remove | Delete saved payment method |
+
+**Payment Methods Workflow:**
+
+| Action | Steps | Validation |
+|--------|-------|------------|
+| Add Card | Tap Add > Enter card details > Verify OTP | Card number, expiry, CVV validation |
+| Add UPI | Tap Add > Enter UPI ID > Verify | UPI ID format validation |
+| Set Default | Tap card > Tap "Set as Default" | Only one default allowed |
+| Remove | Swipe left > Confirm delete | Cannot remove if only payment method |
+
+**Linked Accounts:**
+
+| Account Type | Description | Actions |
+|--------------|-------------|---------|
+| Google | Google account for login | Link / Unlink |
+| Phone | Mobile number for OTP login | Change number / Verify |
+| Email | Email for notifications | Change email / Verify |
+| Facebook | Social login (optional) | Link / Unlink |
+
+**Linked Accounts Workflow:**
+
+| Action | Steps | Validation |
+|--------|-------|------------|
+| Link Google | Tap Link > Google OAuth flow > Confirm | Must not be linked to another account |
+| Unlink Google | Tap Unlink > Confirm | Must have alternate login method |
+| Change Phone | Enter new number > Verify OTP | Number not already registered |
+| Change Email | Enter new email > Verify link | Email not already registered |
+
+---
+
+##### 2.2.6.2 Playback Settings
+
+**Video Quality Settings:**
+
+| Quality | Resolution | Bitrate | Best For |
+|---------|------------|---------|----------|
+| Auto | Adaptive | Variable | All networks (recommended) |
+| Low | 360p | 300 Kbps | Slow 3G, data saving |
+| Medium | 480p | 600 Kbps | 3G networks |
+| High | 720p | 2.5 Mbps | 4G networks |
+| HD | 1080p | 5 Mbps | WiFi, 5G |
+| Ultra HD | 4K | 15 Mbps | Premium plan, WiFi only |
+
+**Video Quality Workflow:**
+
+| Step | Action | System Behavior |
+|------|--------|-----------------|
+| 1 | Tap "Video Quality" | Shows quality options |
+| 2 | Select quality level | Saves preference to profile |
+| 3 | Start playback | Uses selected quality (or lower if network slow) |
+| 4 | Auto mode active | ABR adjusts quality every 10 seconds based on bandwidth |
+
+**Quality Restrictions:**
+
+| Plan | Max Quality | Ultra HD Access |
+|------|-------------|-----------------|
+| Free | 480p | No |
+| Basic | 720p | No |
+| Standard | 1080p | No |
+| Premium | 4K | Yes |
+
+**Autoplay Settings:**
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| Autoplay Next Episode | Automatically play next episode after current ends | ON |
+| Autoplay Previews | Play trailer previews while browsing | ON |
+| Countdown Timer | Seconds before auto-playing next (5/10/15/20) | 10 seconds |
+| Skip Intro | Auto-skip intro when available | OFF |
+
+**Autoplay Workflow:**
+
+| Scenario | Behavior when ON | Behavior when OFF |
+|----------|------------------|-------------------|
+| Episode ends | 10-second countdown, then plays next | Shows "Next Episode" prompt |
+| Browsing Home | Previews play on hover/focus after 2 sec | Static thumbnails only |
+| Series finale | Shows recommendations, no autoplay | Shows recommendations |
+| Binge mode | Reduces countdown to 5 seconds | No change |
+
+**Subtitle Settings:**
 
 | Setting | Options | Default |
 |---------|---------|---------|
-| Video Quality | Auto, Low (360p), Medium (480p), High (720p), HD (1080p) | Auto |
-| Autoplay Next | ON/OFF | ON |
-| Autoplay Previews | ON/OFF | ON |
-| App Language | Hindi, English, Marathi, Gujarati, Odia | Device language |
-| Content Language | Multiple selection | Hindi |
-| Data Saver | ON/OFF (caps quality at 480p) | OFF |
-| Notifications | Per-type toggles | All ON |
+| Subtitles | OFF / Hindi / English / Regional | OFF |
+| Subtitle Size | Small / Medium / Large | Medium |
+| Subtitle Style | White / Yellow / White with background | White with background |
+| Subtitle Position | Bottom / Top | Bottom |
+
+**Subtitle Workflow:**
+
+| Step | Action | Result |
+|------|--------|--------|
+| 1 | Tap "Subtitles" in settings | Opens subtitle preferences |
+| 2 | Select default language | Applied to all future playback |
+| 3 | Adjust size/style | Preview shown in real-time |
+| 4 | Save preferences | Stored per profile |
+| 5 | During playback | Can override via player controls |
+
+---
+
+##### 2.2.6.3 App Settings
+
+**App Language:**
+
+| Language | UI Text | Voice Search |
+|----------|---------|--------------|
+| English | Full support | Yes |
+| Hindi | Full support | Yes |
+| Marathi | Full support | Yes |
+| Gujarati | Full support | Yes |
+| Odia | Full support | Yes |
+| Bhojpuri | Partial (main UI) | No |
+
+**App Language Workflow:**
+
+| Step | Action | Result |
+|------|--------|--------|
+| 1 | Tap "App Language" | Shows language list |
+| 2 | Select language | Confirmation prompt |
+| 3 | Confirm change | App restarts with new language |
+| 4 | Backend sync | Language preference saved to profile |
+
+**Content Language:**
+
+| Setting | Description |
+|---------|-------------|
+| Primary Language | Preferred audio language for content |
+| Secondary Languages | Fallback languages if primary not available |
+| Show All Content | Include content from all languages |
+
+**Content Language Workflow:**
+
+| Step | Action | Result |
+|------|--------|--------|
+| 1 | Tap "Content Language" | Shows multi-select language list |
+| 2 | Select primary language | Marked with star icon |
+| 3 | Select additional languages | Content from these shown on Home |
+| 4 | Save | Home feed refreshes with selected languages |
+
+**Notifications Settings:**
+
+| Notification Type | Description | Default |
+|-------------------|-------------|---------|
+| New Releases | New movies/shows in your languages | ON |
+| Continue Watching | Reminders for incomplete content | ON |
+| Recommendations | Personalized content suggestions | ON |
+| Subscription | Billing, renewal, expiry alerts | ON (cannot disable) |
+| Promotions | Offers, discounts, announcements | ON |
+| Downloads | Download complete notifications | ON |
+
+**Notifications Workflow:**
+
+| Step | Action | Result |
+|------|--------|--------|
+| 1 | Tap "Notifications" | Shows notification toggles |
+| 2 | Toggle individual types | Immediately saved |
+| 3 | "Mute All" option | Disables all except Subscription |
+| 4 | Set Quiet Hours | No notifications between set times |
+
+**Notification Delivery:**
+
+| Channel | Types | Timing |
+|---------|-------|--------|
+| Push (App) | All types | Real-time |
+| Email | Subscription, Weekly digest | As scheduled |
+| SMS | Subscription alerts only | Critical only |
+
+**Data Saver Mode:**
+
+| Setting | Effect |
+|---------|--------|
+| OFF | Stream at selected quality |
+| ON | Cap quality at 480p, reduce image quality |
+| WiFi Only Streaming | Only stream on WiFi, downloads on mobile |
+
+**Data Saver Workflow:**
+
+| Step | Action | Result |
+|------|--------|--------|
+| 1 | Toggle "Data Saver" ON | Quality capped at 480p |
+| 2 | Attempt HD playback | Shows warning, offers to disable |
+| 3 | Toggle "WiFi Only" | Playback blocked on mobile data |
+| 4 | On mobile data | Prompt to use WiFi or disable setting |
+
+**Estimated Data Usage:**
+
+| Quality | Per Hour | 2-Hour Movie |
+|---------|----------|--------------|
+| Low (360p) | 0.3 GB | 0.6 GB |
+| Medium (480p) | 0.7 GB | 1.4 GB |
+| High (720p) | 1.5 GB | 3 GB |
+| HD (1080p) | 3 GB | 6 GB |
+| 4K | 7 GB | 14 GB |
+
+---
+
+##### 2.2.6.4 Device Management
+
+**Manage Devices:**
+
+| Column | Description |
+|--------|-------------|
+| Device Name | User-assigned or auto-detected name |
+| Device Type | Mobile / Tablet / TV / Web |
+| Last Active | Date and time of last use |
+| Location | City/Region (approximate) |
+| Status | Active / Inactive |
+
+**Device Management Workflow:**
+
+| Action | Steps | Result |
+|--------|-------|--------|
+| View Devices | Tap "Manage Devices" | Shows all registered devices |
+| Rename Device | Tap device > Edit name | Name updated |
+| Remove Device | Swipe left > Confirm | Device signed out, slot freed |
+| Sign Out All | Tap "Sign Out All Devices" > Confirm | All devices signed out except current |
+
+**Device Limits:**
+
+| Plan | Max Devices | Concurrent Streams |
+|------|-------------|-------------------|
+| Free | 2 | 1 |
+| Basic | 3 | 1 |
+| Standard | 5 | 2 |
+| Premium | 10 | 4 |
+
+**Device Limit Workflow:**
+
+| Scenario | Behavior |
+|----------|----------|
+| Adding device when at limit | Prompt to remove existing device |
+| Streaming when at concurrent limit | Show active streams, option to stop one |
+| Suspicious activity detected | Email alert, prompt to review devices |
+
+---
+
+##### 2.2.6.5 Support & Help
+
+**Help Center:**
+
+| Section | Content |
+|---------|---------|
+| Getting Started | Account setup, first steps |
+| Playback Issues | Buffering, quality, errors |
+| Account & Billing | Subscription, payments, invoices |
+| Profiles | Managing multiple profiles |
+| Technical | Device compatibility, requirements |
+| FAQs | Common questions and answers |
+
+**Help Center Workflow:**
+
+| Step | Action | Result |
+|------|--------|--------|
+| 1 | Tap "Help Center" | Opens in-app help browser |
+| 2 | Search or browse topics | Shows relevant articles |
+| 3 | Tap article | Full article with images/videos |
+| 4 | "Was this helpful?" | Feedback collected |
+| 5 | "Contact Support" | Opens support ticket form |
+
+**Report a Problem:**
+
+| Field | Description | Required |
+|-------|-------------|----------|
+| Category | Playback / Account / Payment / Other | Yes |
+| Description | Detailed problem description | Yes |
+| Screenshot | Attach screenshot | No |
+| Device Info | Auto-captured | Auto |
+| Content ID | If playback issue | Auto |
+
+**Report Problem Workflow:**
+
+| Step | Action | Result |
+|------|--------|--------|
+| 1 | Tap "Report a Problem" | Opens report form |
+| 2 | Select category | Shows relevant sub-options |
+| 3 | Describe issue | Text input with 500 char limit |
+| 4 | Attach screenshot | Optional, max 5 MB |
+| 5 | Submit | Ticket created, confirmation shown |
+| 6 | Follow-up | Email updates on ticket status |
+
+**Log Out:**
+
+| Option | Description |
+|--------|-------------|
+| Log Out | Sign out from current device only |
+| Log Out All Devices | Sign out from all devices |
+
+**Log Out Workflow:**
+
+| Step | Action | Result |
+|------|--------|--------|
+| 1 | Tap "Log Out" | Confirmation prompt |
+| 2 | Confirm | Clear local token, go to Welcome screen |
+| 3 | Profile data | Watchlist, history synced before logout |
+| 4 | Downloads | Prompt to keep or delete downloaded content |
+
+**Legal & Info:**
+
+| Item | Description |
+|------|-------------|
+| Terms of Service | Full terms, opens in browser |
+| Privacy Policy | Privacy policy, opens in browser |
+| Content Policies | Community guidelines |
+| Licenses | Open source licenses used |
+| App Version | Current version number |
+| Check for Updates | Manual update check |
+
+---
+
+**Settings Data Storage:**
+
+| Setting Type | Storage | Sync |
+|--------------|---------|------|
+| Profile preferences | Cloud (per profile) | Real-time |
+| Playback quality | Cloud (per profile) | Real-time |
+| App language | Cloud (per account) | On app restart |
+| Notification toggles | Cloud (per account) | Real-time |
+| Device settings | Local only | No sync |
 
 ---
 
