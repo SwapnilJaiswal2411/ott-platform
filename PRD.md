@@ -1,8 +1,8 @@
 ﻿# Product Requirements Document (PRD)
 # OTT Streaming Platform - "MahuaPlay"
 
-**Document Version**: 2.0
-**Last Updated**: 17 February 2026
+**Document Version**: 3.2
+**Last Updated**: 19 February 2026
 **Author**: MahuaPlay Product Team
 **Status**: Ready for Development
 
@@ -39,6 +39,7 @@
 10. [Risks & Mitigations](#10-risks--mitigations)
 11. [Appendix](#11-appendix)
 12. [Tech Stack Summary](#12-tech-stack-summary-for-development-team)
+13. [Integration Matrix & Developer Reference](#13-integration-matrix--developer-reference)
 
 ---
 
@@ -63,6 +64,7 @@
 | 2.1 | 18 Feb 2026 | Product Team | Added Kafka, scaled to 1M+ users |
 | 3.0 | 18 Feb 2026 | Product Team | Added Hybrid Architecture (Bunny.net + AWS), Android integration |
 | 3.1 | 19 Feb 2026 | Product Team | Added comprehensive Admin Portal section (2.9) with 18 subsections |
+| 3.2 | 19 Feb 2026 | Product Team | Added Integration Matrix & Developer Reference, Kafka event schemas, API quick reference |
 
 ---
 
@@ -4803,19 +4805,36 @@ Clients --> CloudFront/Bunny CDN --> API Gateway --> ECS/Lambda --> Aurora/Dynam
 
 **Key Topics**
 
-| Topic | Purpose | Partitions |
-|-------|---------|------------|
-| user-events | Login, signup, profile changes | 12 |
-| playback-events | Play, pause, seek, complete | 24 |
-| content-events | Upload, publish, update | 6 |
-| payment-events | Subscribe, renew, cancel | 6 |
-| notification-events | Push, email triggers | 12 |
+| Topic | Purpose | Partitions | Consumers |
+|-------|---------|------------|-----------|
+| user-events | Login, signup, profile changes | 12 | Analytics, Notification, Singular |
+| playback-events | Play, pause, seek, complete | 24 | Analytics, Recommendation, Billing |
+| content-events | Upload, publish, update | 6 | Search Index, CDN Invalidation |
+| payment-events | Subscribe, renew, cancel | 6 | Notification, Analytics, Sabpaisa Webhook |
+| notification-events | Push, email, SMS, WhatsApp triggers | 12 | FCM, SES, MSG91, WhatsApp API |
+| ad-events | Impressions, clicks, completions | 12 | Ad Analytics, Revenue Dashboard |
+| admin-events | Admin actions, config changes | 6 | Audit Log, Analytics |
+| alert-events | System alerts, errors | 6 | Admin Dashboard, Sentry |
+
+**Event Flow Architecture**
+```
+User/App Events --> Kafka --> Event Consumers
+                              ├── Analytics Service --> Mixpanel/Singular
+                              ├── Notification Service --> FCM/SES/MSG91/WhatsApp
+                              ├── Recommendation Engine --> ML Pipeline
+                              ├── Billing Service --> Sabpaisa
+                              ├── Search Indexer --> OpenSearch
+                              ├── Admin Dashboard --> Real-time Widgets
+                              └── Audit Logger --> Aurora PostgreSQL
+```
 
 **Event Consumers**
-- Analytics pipeline (real-time dashboards)
-- Recommendation engine (ML training)
-- Notification service (trigger alerts)
-- Billing service (usage tracking)
+- Analytics pipeline (real-time dashboards, Mixpanel, Singular)
+- Recommendation engine (ML training, personalization)
+- Notification service (FCM, SES, MSG91, WhatsApp Business API)
+- Billing service (usage tracking, Sabpaisa reconciliation)
+- Admin Dashboard (real-time metrics via WebSocket)
+- Audit service (compliance logging)
 
 ### 3.4 CDN & Video Delivery Infrastructure (India-Focused)
 
@@ -4889,18 +4908,45 @@ Clients --> CloudFront/Bunny CDN --> API Gateway --> ECS/Lambda --> Aurora/Dynam
 #### 3.6.1 Bunny.net Integration
 
 **Services Used**
-- Bunny Stream (video hosting, transcoding)
-- Bunny CDN (global delivery)
-- Bunny Player (embedded player with DRM)
+
+| Service | Purpose | Admin Portal Section |
+|---------|---------|---------------------|
+| Bunny Stream | Video hosting, transcoding | 2.9.4 Content Management |
+| Bunny CDN | Global video delivery, 14+ India PoPs | 2.9.7 Video Player Config |
+| Bunny Player | Embedded DRM player | 2.9.7 Video Player Config |
+| Bunny Storage | Raw video storage | 2.9.4 Content Management |
+| Bunny DRM | Widevine + FairPlay protection | 2.9.7.8 DRM & Security |
 
 **API Integration**
 
-| Endpoint | Purpose |
-|----------|---------|
-| POST /library/{id}/videos | Upload video |
-| GET /library/{id}/videos/{videoId} | Get video details |
-| DELETE /library/{id}/videos/{videoId} | Delete video |
-| GET /library/{id}/videos/{videoId}/play | Get playback URL |
+| Endpoint | Purpose | Used By |
+|----------|---------|---------|
+| POST /library/{id}/videos | Upload video | Admin CMS, Content Upload |
+| GET /library/{id}/videos/{videoId} | Get video details | Content Service |
+| DELETE /library/{id}/videos/{videoId} | Delete video | Admin CMS |
+| GET /library/{id}/videos/{videoId}/play | Get playback URL | Playback Service |
+| POST /library/{id}/videos/{videoId}/captions | Add subtitles | Admin CMS |
+| GET /library/{id}/statistics | Video analytics | Admin Dashboard |
+
+**Transcoding Profiles (Auto-generated by Bunny)**
+
+| Quality | Resolution | Bitrate | Plan Access |
+|---------|------------|---------|-------------|
+| 240p | 426x240 | 300 Kbps | All (Data Saver) |
+| 360p | 640x360 | 600 Kbps | All |
+| 480p | 854x480 | 1 Mbps | All (Free max) |
+| 720p | 1280x720 | 2.5 Mbps | Basic+ |
+| 1080p | 1920x1080 | 5 Mbps | Standard+ |
+| 4K | 3840x2160 | 15 Mbps | Premium only |
+
+**DRM Configuration**
+
+| Platform | DRM System | Bunny Support |
+|----------|------------|---------------|
+| Android | Widevine L1/L3 | Built-in |
+| iOS/Safari | FairPlay | Built-in |
+| Chrome/Firefox | Widevine | Built-in |
+| Edge | PlayReady | Built-in |
 
 #### 3.6.2 AWS Services
 
@@ -4918,15 +4964,18 @@ Clients --> CloudFront/Bunny CDN --> API Gateway --> ECS/Lambda --> Aurora/Dynam
 
 **Third-Party Integrations**
 
-| Category | Provider | Notes |
-|----------|----------|-------|
-| Payment Gateway | Sabpaisa | Redirect-based (UPI, Cards, Wallets) |
-| Push Notifications | Firebase Cloud Messaging | Android + iOS |
-| Email | AWS SES | Transactional emails |
-| SMS | MSG91 | OTP, notifications |
-| Analytics | Mixpanel | User behavior tracking |
-| Crash Reporting | Sentry | Error monitoring |
-| Ad Server | Google Ad Manager | AVOD monetization |
+| Category | Provider | Purpose | Integration Type |
+|----------|----------|---------|------------------|
+| Payment Gateway | Sabpaisa | UPI, Cards, Net Banking, Wallets | Redirect-based |
+| Push Notifications | Firebase Cloud Messaging | Android + iOS push | SDK + Server |
+| Email | AWS SES | Transactional, Marketing emails | API |
+| SMS | MSG91 | OTP, Notifications | API |
+| WhatsApp | WhatsApp Business API | Promotional, Reminders | API |
+| Mobile Analytics | Singular | Attribution, Downloads, Regional | SDK |
+| User Analytics | Mixpanel | User behavior tracking | SDK + API |
+| Crash Reporting | Sentry | Error monitoring | SDK |
+| Ad Server | Google Ad Manager | AVOD monetization, VAST/VPAID | SDK + API |
+| Ad Networks | Meta, InMobi, Amazon | Programmatic ads | SDK |
 
 **Development Stack**
 
@@ -5343,15 +5392,22 @@ Paid Tiers:
 | Monitoring | CloudWatch + Grafana | Metrics and alerting |
 
 ### Third-Party Integrations
-| Category | Provider | Notes |
-|----------|----------|-------|
-| Payment Gateway | Sabpaisa | Redirect-based (UPI, Cards, Wallets) |
-| Push Notifications | Firebase Cloud Messaging | Android + iOS |
-| Email | AWS SES | Transactional emails |
-| SMS | MSG91 | OTP, notifications |
-| Analytics | Mixpanel | User behavior tracking |
-| Crash Reporting | Sentry | Error monitoring |
-| Ad Server | Google Ad Manager | AVOD monetization |
+
+| Category | Provider | Purpose | Admin Config Section |
+|----------|----------|---------|---------------------|
+| Video CDN | Bunny.net | Video hosting, transcoding, CDN, DRM | 2.9.7 Video Player |
+| Payment | Sabpaisa | UPI, Cards, Net Banking, Wallets | 2.9.14.3 Payment Config |
+| Push | Firebase Cloud Messaging | Android + iOS push notifications | 2.9.10 Notifications |
+| Email | AWS SES | Transactional, Marketing emails | 2.9.10 Notifications |
+| SMS | MSG91 | OTP, Notifications | 2.9.10 Notifications |
+| WhatsApp | WhatsApp Business API | Promotional, Reminders | 2.9.10 Notifications |
+| Mobile Attribution | Singular | Downloads, Attribution, Regional | 2.9.13.0 Analytics |
+| User Analytics | Mixpanel | User behavior, Events | 2.9.13 Analytics |
+| Crash Reporting | Sentry | Error monitoring, Crash reports | 2.9.17.2 Playback Diagnostics |
+| Ad Server | Google Ad Manager | VAST/VPAID, Programmatic | 2.9.11 Advertisement |
+| Ad Networks | Meta, InMobi, Amazon | Mobile/TV ads | 2.9.11.1 Ad Networks |
+| Search | AWS OpenSearch | Content search, Recommendations | 2.9.8 Search Config |
+| Event Streaming | AWS MSK (Kafka) | Real-time events, Analytics | All real-time features |
 
 ### Development Stack
 | Component | Technology |
@@ -5364,6 +5420,263 @@ Paid Tiers:
 
 ---
 
+## 13. Integration Matrix & Developer Reference
+
+### 13.1 Feature-to-Service Mapping
+
+This matrix shows which third-party services power each feature. Use this as a reference when implementing features.
+
+#### User-Facing Features
+
+| Feature | Primary Services | Kafka Topics | Admin Config |
+|---------|------------------|--------------|--------------|
+| User Registration | AWS Cognito, MSG91 (OTP) | user-events | 2.9.3 User Mgmt |
+| Login (Google) | AWS Cognito, Google OAuth | user-events | 2.9.3 User Mgmt |
+| Login (Phone OTP) | AWS Cognito, MSG91 | user-events | 2.9.14.4 SMS Templates |
+| Profile Management | Aurora PostgreSQL | user-events | 2.9.3.2 User Profile |
+| Video Playback | Bunny Stream, Bunny CDN, Bunny DRM | playback-events | 2.9.7 Video Player |
+| Search | AWS OpenSearch | - | 2.9.8 Search Config |
+| Recommendations | OpenSearch, ML Pipeline | playback-events | 2.9.9 Recommendations |
+| Subscription Purchase | Sabpaisa | payment-events | 2.9.5 Subscription Mgmt |
+| Push Notifications | Firebase Cloud Messaging | notification-events | 2.9.10 Notifications |
+| Email Notifications | AWS SES | notification-events | 2.9.10.5 Templates |
+| SMS Notifications | MSG91 | notification-events | 2.9.14.4 SMS Templates |
+| WhatsApp Messages | WhatsApp Business API | notification-events | 2.9.10.1 Channels |
+| Ads (Free Tier) | Google Ad Manager, Meta, InMobi | ad-events | 2.9.11 Advertisement |
+| Downloads | Bunny CDN, ExoPlayer | playback-events | 2.9.7.5 Playback Rules |
+| Watch Party | WebSocket Service | playback-events | 2.9.12.3 Watch Party |
+
+#### Admin Features
+
+| Feature | Primary Services | Kafka Topics | Data Source |
+|---------|------------------|--------------|-------------|
+| Real-time Dashboard | WebSocket, Redis | All events | 2.9.2 Dashboard |
+| Content Upload | Bunny Stream API | content-events | 2.9.4 Content Mgmt |
+| Transcoding Status | Bunny Stream Webhook | content-events | 2.9.4 Content Mgmt |
+| User Analytics | Mixpanel, Singular | user-events, playback-events | 2.9.13 Analytics |
+| Revenue Analytics | Aurora, Sabpaisa | payment-events | 2.9.5.3 Revenue |
+| Ad Analytics | Google Ad Manager | ad-events | 2.9.11.11 Ad Analytics |
+| Notification Campaigns | FCM, SES, MSG91, WhatsApp | notification-events | 2.9.10.7 Campaigns |
+| Audit Logs | Aurora PostgreSQL | admin-events | 2.9.16.1 Audit Logs |
+
+---
+
+### 13.2 API Integration Quick Reference
+
+#### Bunny.net APIs (Video Pipeline)
+
+```
+Base URL: https://video.bunnycdn.com
+
+# Upload Video
+POST /library/{libraryId}/videos
+Headers: AccessKey: {API_KEY}
+Body: { "title": "Movie Name" }
+Response: { "guid": "video-id", "status": "created" }
+
+# Get Playback URL (with DRM)
+GET /library/{libraryId}/videos/{videoId}/play
+Response: { "playbackUrl": "https://...", "drmToken": "..." }
+
+# Webhook Events (configure in Bunny dashboard)
+- video.encoded (transcoding complete)
+- video.deleted
+- video.captions.added
+```
+
+#### Sabpaisa Payment (Redirect Flow)
+
+```
+# Step 1: Create Order (Backend)
+POST /api/v1/subscriptions/checkout
+Body: { "planId": "premium_monthly", "userId": "..." }
+Response: { "redirectUrl": "https://sabpaisa.com/pay/...", "orderId": "..." }
+
+# Step 2: User completes payment on Sabpaisa page
+
+# Step 3: Webhook Callback (Sabpaisa → Backend)
+POST /api/webhooks/sabpaisa
+Body: { "orderId": "...", "status": "success", "transactionId": "..." }
+Action: Update subscription, publish to payment-events Kafka topic
+```
+
+#### Firebase Cloud Messaging (Push)
+
+```
+# Send Notification (Backend)
+POST https://fcm.googleapis.com/fcm/send
+Headers: Authorization: key={SERVER_KEY}
+Body: {
+  "to": "{device_token}",
+  "notification": { "title": "...", "body": "..." },
+  "data": { "contentId": "...", "deepLink": "..." }
+}
+
+# Triggered by: notification-events Kafka consumer
+```
+
+#### Singular SDK (Mobile Attribution)
+
+```kotlin
+// Android Integration
+Singular.init(context, config)
+
+// Track Install (automatic)
+// Track Events
+Singular.event("subscription_purchase", mapOf("plan" to "premium", "revenue" to 499))
+Singular.event("video_play", mapOf("contentId" to "..."))
+
+// Admin Dashboard: View data at singular.net dashboard
+```
+
+#### AWS OpenSearch (Search)
+
+```
+# Index Content
+PUT /content/_doc/{contentId}
+Body: { "title": "...", "genres": [...], "cast": [...], "language": "..." }
+
+# Search
+GET /content/_search
+Body: {
+  "query": {
+    "multi_match": {
+      "query": "action movie",
+      "fields": ["title^10", "cast^6", "description^3"]
+    }
+  }
+}
+```
+
+---
+
+### 13.3 Kafka Event Schemas
+
+All events follow this base structure:
+
+```json
+{
+  "eventId": "uuid",
+  "eventType": "user.login",
+  "timestamp": "2026-02-19T10:30:00Z",
+  "source": "android-app",
+  "userId": "uuid",
+  "data": { ... }
+}
+```
+
+#### Key Event Types
+
+| Topic | Event Type | Data Fields | Consumers |
+|-------|------------|-------------|-----------|
+| user-events | user.signup | email, phone, method, referralCode | Analytics, Notification |
+| user-events | user.login | deviceId, ip, location | Analytics, Security |
+| playback-events | playback.start | contentId, quality, deviceType | Analytics, Recommendations |
+| playback-events | playback.progress | contentId, position, duration | Continue Watching |
+| playback-events | playback.complete | contentId, watchTime | Recommendations, Analytics |
+| payment-events | payment.success | planId, amount, method | Notification, Analytics |
+| payment-events | subscription.expired | planId, userId | Notification, Ad Service |
+| content-events | content.published | contentId, title, type | Search Index, CDN Warm |
+| notification-events | notification.send | channel, template, userId | FCM/SES/MSG91/WhatsApp |
+| ad-events | ad.impression | adId, placement, revenue | Ad Analytics |
+| admin-events | admin.action | adminId, action, target | Audit Log |
+
+---
+
+### 13.4 Environment Configuration
+
+#### Required API Keys & Secrets
+
+| Service | Secret Name | Where Used |
+|---------|-------------|------------|
+| Bunny.net | BUNNY_API_KEY | Content Service, Admin CMS |
+| Bunny.net | BUNNY_LIBRARY_ID | Content Service |
+| AWS Cognito | COGNITO_USER_POOL_ID | Auth Service |
+| AWS Cognito | COGNITO_CLIENT_ID | Auth Service, Apps |
+| Sabpaisa | SABPAISA_MERCHANT_ID | Payment Service |
+| Sabpaisa | SABPAISA_SECRET_KEY | Payment Service |
+| Firebase | FCM_SERVER_KEY | Notification Service |
+| MSG91 | MSG91_AUTH_KEY | Notification Service |
+| MSG91 | MSG91_SENDER_ID | Notification Service |
+| WhatsApp | WHATSAPP_BUSINESS_ID | Notification Service |
+| WhatsApp | WHATSAPP_ACCESS_TOKEN | Notification Service |
+| Singular | SINGULAR_API_KEY | Android/iOS Apps |
+| Singular | SINGULAR_SECRET | Analytics Service |
+| Mixpanel | MIXPANEL_TOKEN | Analytics Service, Apps |
+| Sentry | SENTRY_DSN | All Services, Apps |
+| Google Ad Manager | GAM_NETWORK_ID | Ad Service |
+| AWS MSK | KAFKA_BOOTSTRAP_SERVERS | All Services |
+| OpenSearch | OPENSEARCH_ENDPOINT | Search Service |
+
+#### Infrastructure Endpoints
+
+| Environment | API Gateway | Admin Portal | CDN |
+|-------------|-------------|--------------|-----|
+| Development | api-dev.mahuaplay.com | admin-dev.mahuaplay.com | dev-cdn.b-cdn.net |
+| Staging | api-staging.mahuaplay.com | admin-staging.mahuaplay.com | staging-cdn.b-cdn.net |
+| Production | api.mahuaplay.com | admin.mahuaplay.com | cdn.mahuaplay.com |
+
+---
+
+### 13.5 Development Workflow
+
+#### Content Upload Flow
+```
+1. Admin uploads video via Admin CMS (2.9.4)
+2. Backend calls Bunny Stream API → Returns video GUID
+3. Publish content-events/content.uploaded to Kafka
+4. Bunny transcodes video (240p-4K automatically)
+5. Bunny sends webhook → content-events/content.encoded
+6. Backend updates content status to "ready"
+7. Content appears in app via Content Service API
+```
+
+#### Subscription Flow
+```
+1. User selects plan in app
+2. App calls POST /api/v1/subscriptions/checkout
+3. Backend creates order, returns Sabpaisa redirect URL
+4. User completes payment on Sabpaisa page
+5. Sabpaisa sends webhook to /api/webhooks/sabpaisa
+6. Backend publishes payment-events/payment.success to Kafka
+7. Notification Service sends confirmation (FCM, Email, SMS)
+8. User's subscription is activated
+```
+
+#### Notification Flow
+```
+1. Event occurs (new content, payment, etc.)
+2. Service publishes to notification-events Kafka topic
+3. Notification Service consumes event
+4. Checks user preferences (Admin 2.9.10.8)
+5. Routes to appropriate channel:
+   - Push → Firebase Cloud Messaging
+   - Email → AWS SES
+   - SMS → MSG91
+   - WhatsApp → WhatsApp Business API
+6. Logs delivery status to Analytics
+```
+
+---
+
+### 13.6 Quick Links for Developers
+
+| Resource | URL |
+|----------|-----|
+| Bunny.net API Docs | https://docs.bunny.net/reference/api-overview |
+| Bunny Stream Docs | https://docs.bunny.net/docs/stream-api |
+| AWS Cognito Docs | https://docs.aws.amazon.com/cognito/ |
+| Sabpaisa Integration | https://docs.sabpaisa.com/ |
+| Firebase FCM | https://firebase.google.com/docs/cloud-messaging |
+| MSG91 API | https://docs.msg91.com/ |
+| WhatsApp Business API | https://developers.facebook.com/docs/whatsapp |
+| Singular SDK | https://support.singular.net/hc/en-us/categories/360002441212-Developer-Resources |
+| Mixpanel SDK | https://developer.mixpanel.com/ |
+| AWS MSK (Kafka) | https://docs.aws.amazon.com/msk/ |
+| OpenSearch | https://opensearch.org/docs/latest/ |
+
+---
+
 **End of Document**
 
-*This PRD is ready for development. For questions, contact the Product Team.*
+*This PRD is ready for development. All third-party integrations are documented with their corresponding Admin Portal configuration sections. For questions, contact the Product Team.*
